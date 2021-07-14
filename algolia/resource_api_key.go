@@ -27,9 +27,9 @@ func resourceApiKey() *schema.Resource {
 			},
 			"acl": {
 				Type:     schema.TypeSet,
-				Required: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Set:      schema.HashString,
+				Required: true,
 			},
 			"description": {
 				Type:     schema.TypeString,
@@ -37,11 +37,12 @@ func resourceApiKey() *schema.Resource {
 			},
 			"indexes": {
 				Type:     schema.TypeSet,
-				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Set:      schema.HashString,
+				Optional: true,
+				Computed: true,
 			},
-			"max_queries_per_ip_peer_hour": {
+			"max_queries_per_ip_per_hour": {
 				Type:     schema.TypeInt,
 				Optional: true,
 				Default:  15000,
@@ -53,16 +54,22 @@ func resourceApiKey() *schema.Resource {
 			},
 			"referers": {
 				Type:     schema.TypeSet,
-				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Set:      schema.HashString,
+				Optional: true,
+				Computed: true,
+			},
+			"validity": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				Default:  0,
 			},
 		},
 	}
 }
 
 func resourceApiKeyCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	res, err := m.(*search.Client).AddAPIKey(getAlgoliaSearchKey(d))
+	res, err := m.(*apiClient).algolia.AddAPIKey(getAlgoliaSearchKey(d))
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -93,7 +100,7 @@ func resourceApiKeyRead(ctx context.Context, d *schema.ResourceData, m interface
 }
 
 func resourceApiKeyUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	res, err := m.(*search.Client).UpdateAPIKey(getAlgoliaSearchKey(d))
+	res, err := m.(*apiClient).algolia.UpdateAPIKey(getAlgoliaSearchKey(d))
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -110,7 +117,7 @@ func resourceApiKeyDelete(ctx context.Context, d *schema.ResourceData, m interfa
 	// Warning or errors can be collected in a slice type
 	var diags diag.Diagnostics
 
-	res, err := m.(*search.Client).DeleteAPIKey(d.Get("key").(string))
+	res, err := m.(*apiClient).algolia.DeleteAPIKey(d.Get("key").(string))
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -138,56 +145,40 @@ func importApiKeyState(ctx context.Context, d *schema.ResourceData, m interface{
 }
 
 func refreshApiKeyState(d *schema.ResourceData, m interface{}) error {
-	key, err := m.(*search.Client).GetAPIKey(d.Get("key").(string))
+	key, err := m.(*apiClient).algolia.GetAPIKey(d.Get("key").(string))
 	if err != nil {
 		d.SetId("")
 		return err
 	}
 
-	if err := d.Set("acl", key.ACL); err != nil {
-		return err
-	}
-
-	if err := d.Set("description", key.Description); err != nil {
-		return err
-	}
-
-	if err := d.Set("indexes", key.Indexes); err != nil {
-		return err
-	}
-
-	if err := d.Set("max_queries_per_ip_peer_hour", key.MaxQueriesPerIPPerHour); err != nil {
-		return err
-	}
-
-	if err := d.Set("max_hits_per_query", key.MaxHitsPerQuery); err != nil {
-		return err
-	}
-
-	if err := d.Set("referers", key.Referers); err != nil {
-		return err
-	}
-
-	return nil
+	return setValues(d, map[string]interface{}{
+		"acl":                         key.ACL,
+		"description":                 key.Description,
+		"indexes":                     key.Indexes,
+		"max_queries_per_ip_per_hour": key.MaxQueriesPerIPPerHour,
+		"max_hits_per_query":          key.MaxHitsPerQuery,
+		"referers":                    key.Referers,
+		"validity":                    key.Validity.Seconds(),
+	})
 }
 
 func getAlgoliaSearchKey(d *schema.ResourceData) search.Key {
 	var acl []string
-	if value := d.Get("acl"); value != nil {
+	if value, ok := d.GetOk("acl"); ok {
 		for _, v := range value.(*schema.Set).List() {
 			acl = append(acl, v.(string))
 		}
 	}
 
 	var indexes []string
-	if value := d.Get("indexes"); value != nil {
+	if value, ok := d.GetOk("indexes"); ok {
 		for _, v := range value.(*schema.Set).List() {
 			indexes = append(indexes, v.(string))
 		}
 	}
 
 	var referers []string
-	if value := d.Get("referers"); value != nil {
+	if value, ok := d.GetOk("referers"); ok {
 		for _, v := range value.(*schema.Set).List() {
 			referers = append(referers, v.(string))
 		}
@@ -198,8 +189,9 @@ func getAlgoliaSearchKey(d *schema.ResourceData) search.Key {
 		ACL:                    acl,
 		Description:            d.Get("description").(string),
 		Indexes:                indexes,
-		MaxQueriesPerIPPerHour: d.Get("max_queries_per_ip_peer_hour").(int),
+		MaxQueriesPerIPPerHour: d.Get("max_queries_per_ip_per_hour").(int),
 		MaxHitsPerQuery:        d.Get("max_hits_per_query").(int),
 		Referers:               referers,
+		Validity:               time.Duration(d.Get("validity").(int)) * time.Second,
 	}
 }

@@ -27,6 +27,8 @@ func Provider() *schema.Provider {
 
 		ResourcesMap: map[string]*schema.Resource{
 			"algolia_api_key": resourceApiKey(),
+			"algolia_index":   resourceIndex(),
+			"algolia_index_rule": resourceRule(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -38,11 +40,9 @@ func Provider() *schema.Provider {
 }
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
-	// Warning or errors can be collected in a slice type
-	var diags diag.Diagnostics
-
-	applicationId := d.Get("application_id").(string)
-	apiKey := d.Get("api_key").(string)
-
-	return search.NewClient(applicationId, apiKey), diags
+	config := search.Configuration{
+		AppID:  d.Get("application_id").(string),
+		APIKey: d.Get("api_key").(string),
+	}
+	return &apiClient{algolia: search.NewClientWithConfig(config)}, nil
 }
